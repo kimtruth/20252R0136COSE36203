@@ -110,9 +110,9 @@ def main():
     parser = argparse.ArgumentParser(description='MapleStory Item Price Prediction Pipeline')
     parser.add_argument(
         '--limit',
-        type=int,
+        type=lambda x: None if x.lower() == 'none' else int(x),
         default=None,
-        help='Limit number of rows to load from database (for testing)'
+        help='Limit number of rows to load from database (for testing). Use "None" for all data.'
     )
     parser.add_argument(
         '--model',

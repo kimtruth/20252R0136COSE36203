@@ -1,6 +1,0 @@
-usage: pipeline.py [-h] [--limit LIMIT]
-                   [--model {random_forest,gradient_boosting,lightgbm}]
-                   [--test-size TEST_SIZE] [--val-size VAL_SIZE]
-                   [--preprocessed-data PREPROCESSED_DATA]
-                   [--no-save-processed]
-pipeline.py: error: argument --limit: invalid int value: 'None'
