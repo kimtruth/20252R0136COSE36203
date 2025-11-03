@@ -37,18 +37,29 @@ def run_pipeline(
     print("STEP 1: EXTRACT & TRANSFORM")
     print("=" * 80)
     
-    if preprocessed_data_path and os.path.exists(preprocessed_data_path):
-        print(f"Loading preprocessed data from {preprocessed_data_path}...")
-        df = pd.read_parquet(preprocessed_data_path)
-        print(f"Loaded {len(df)} rows")
+    # Determine path for preprocessed data
+    default_processed_path = 'data/processed/preprocessed_data.parquet'
+    if data_limit:
+        default_processed_path = f'data/processed/preprocessed_data_{data_limit}.parquet'
+    
+    # Use provided path or default path
+    final_processed_path = preprocessed_data_path if preprocessed_data_path else default_processed_path
+    
+    # Check if preprocessed data exists
+    if os.path.exists(final_processed_path):
+        print(f"✓ Found preprocessed data: {final_processed_path}")
+        print(f"Loading preprocessed data...")
+        df = pd.read_parquet(final_processed_path)
+        print(f"Loaded {len(df):,} rows from saved file")
+        print(f"Note: Using cached preprocessed data. Delete '{final_processed_path}' to reload from database.")
     else:
-        processed_path = None
-        if save_processed:
-            processed_path = 'data/processed/preprocessed_data.parquet'
-            if data_limit:
-                processed_path = f'data/processed/preprocessed_data_{data_limit}.parquet'
-        
+        print(f"No preprocessed data found. Loading from database...")
+        print(f"This may take a while for large datasets...")
+        processed_path = final_processed_path if save_processed else None
         df = load_and_preprocess_data(limit=data_limit, save_path=processed_path)
+        if save_processed:
+            print(f"\n✓ Preprocessed data saved to: {processed_path}")
+            print(f"  Next time, this file will be used automatically (faster!)")
     
     print(f"\nPreprocessed data shape: {df.shape}")
     print(f"Target (price) statistics:")

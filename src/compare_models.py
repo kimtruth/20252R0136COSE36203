@@ -15,10 +15,17 @@ def compare_models(models_dir='models', output_path='MODEL_COMPARISON.md'):
     
     # Load metrics for each model
     for metrics_file in models_dir.glob('metrics*.json'):
-        model_name = metrics_file.stem.replace('metrics_', '') or 'random_forest'
+        # Extract model name from filename
+        model_name = metrics_file.stem.replace('metrics_', '')
+        if model_name == 'metrics' or model_name == '':
+            model_name = 'random_forest'  # Default model name
         
         with open(metrics_file, 'r') as f:
             metrics = json.load(f)
+        
+        # Use model_type from metrics if available
+        if 'model_type' in metrics:
+            model_name = metrics['model_type']
         
         comparison[model_name] = metrics
     

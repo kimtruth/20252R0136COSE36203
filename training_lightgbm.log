@@ -1,0 +1,124 @@
+================================================================================
+MAPLESTORY ITEM PRICE PREDICTION - E2E PIPELINE
+================================================================================
+
+================================================================================
+STEP 1: EXTRACT & TRANSFORM
+================================================================================
+Loading data from database...
+Loaded 1207305 rows
+Flattening payload_json...
+Extracting time features...
+Handling categorical variables...
+Filling missing values...
+Saved preprocessed data to data/processed/preprocessed_data.parquet
+
+Preprocessed data shape: (1207305, 69)
+Target (price) statistics:
+count    1.207305e+06
+mean     2.216075e+09
+std      9.426711e+09
+min      5.000000e+01
+25%      7.777770e+05
+50%      1.100000e+07
+75%      1.500000e+09
+max      2.000000e+12
+Name: price, dtype: float64
+
+================================================================================
+STEP 2: TRAIN MODEL
+================================================================================
+================================================================================
+TRAINING PRICE PREDICTION MODEL
+================================================================================
+
+1. Preparing features...
+   Features shape: (1207305, 61)
+   Target shape: (1207305,)
+
+2. Splitting data (random sampling)...
+   Note: Using random split to ensure time patterns are learned across all periods
+   Time features (year, month, day_of_week, etc.) are preserved in the feature set
+   Train: 845113 samples (70.0%)
+   Validation: 120731 samples (10.0%)
+   Test: 241461 samples (20.0%)
+
+3. Encoding categorical features...
+
+4. Scaling features...
+
+5. Training model...
+Training lightgbm model...
+
+6. Evaluating model...
+
+================================================================================
+MODEL PERFORMANCE METRICS
+================================================================================
+
+Train Set:
+  RMSE: 4,405,999,639.06
+  MAE: 640,669,663.97
+  R²: 0.7941
+  MAPE: 28980.63%
+
+Validation Set:
+  RMSE: 3,527,340,235.64
+  MAE: 656,120,979.92
+  R²: 0.8310
+  MAPE: 18704.71%
+
+Test Set:
+  RMSE: 3,928,335,387.07
+  MAE: 655,342,116.64
+  R²: 0.8009
+  MAPE: 36670.95%
+
+7. Saving model and artifacts...
+   Model saved to: models/price_prediction_model_lightgbm.joblib
+   Scaler saved to: models/scaler_lightgbm.joblib
+   Label encoders saved to: models/label_encoders_lightgbm.joblib
+   Feature importance saved to: models/feature_importance_lightgbm.json
+   Metrics saved to: models/metrics_lightgbm.json
+
+================================================================================
+TOP 10 MOST IMPORTANT FEATURES
+================================================================================
+ 1. item_id                                  218.0000
+ 2. name                                     216.0000
+ 3. detail_PAD_sum                           181.0000
+ 4. detail_MAD_sum                           155.0000
+ 5. detail_PAD_max                           152.0000
+ 6. payload_trade_sn                         108.0000
+ 7. detail_MAD_max                           108.0000
+ 8. detail_cuttable                          94.0000
+ 9. detail_scroll_LUK_sum                    74.0000
+10. additional_grade                         70.0000
+
+================================================================================
+STEP 3: PIPELINE SUMMARY
+================================================================================
+
+Model Type: lightgbm
+
+Final Test Set Performance:
+  RMSE: 3,928,335,387.07
+  MAE: 655,342,116.64
+  R²: 0.8009
+  MAPE: 36670.95%
+
+================================================================================
+PIPELINE COMPLETE!
+================================================================================
+
+Model and artifacts saved in 'models/' directory
+Preprocessed data saved in 'data/processed/' directory
+
+================================================================================
+STEP 4: GENERATING REPORT
+================================================================================
+Training report saved to: TRAINING_REPORT_lightgbm.md
+
+Training report generated: TRAINING_REPORT_lightgbm.md
+Model comparison report saved to: MODEL_COMPARISON.md
+Model comparison report generated: MODEL_COMPARISON.md
