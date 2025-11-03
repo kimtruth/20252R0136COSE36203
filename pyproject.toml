@@ -1,0 +1,15 @@
+[project]
+name = "maple-meso"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "joblib>=1.5.2",
+    "numpy>=2.3.4",
+    "pandas>=2.3.3",
+    "pymysql>=1.1.2",
+    "python-dotenv>=1.2.1",
+    "scikit-learn>=1.7.2",
+    "pyarrow>=18.0.0",
+]
