@@ -154,12 +154,65 @@ def evaluate_model(model: object,
     return metrics
 
 
+def split_data_by_time(df: pd.DataFrame, 
+                       X: pd.DataFrame, 
+                       y: pd.Series,
+                       test_size: float = 0.2,
+                       val_size: float = 0.1,
+                       time_col: str = 'created_at') -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
+    """
+    Split data by time order (chronological split)
+    Train: oldest data
+    Validation: middle period
+    Test: most recent data
+    """
+    # Sort by time
+    if time_col in df.columns:
+        df_sorted = df.sort_values(by=time_col).reset_index(drop=True)
+        X_sorted = X.iloc[df_sorted.index].reset_index(drop=True)
+        y_sorted = y.iloc[df_sorted.index].reset_index(drop=True)
+        
+        # Calculate split indices
+        total_size = len(df_sorted)
+        test_start_idx = int(total_size * (1 - test_size))
+        val_start_idx = int(total_size * (1 - test_size - val_size))
+        
+        # Split chronologically
+        X_train = X_sorted.iloc[:val_start_idx]
+        X_val = X_sorted.iloc[val_start_idx:test_start_idx]
+        X_test = X_sorted.iloc[test_start_idx:]
+        
+        y_train = y_sorted.iloc[:val_start_idx]
+        y_val = y_sorted.iloc[val_start_idx:test_start_idx]
+        y_test = y_sorted.iloc[test_start_idx:]
+        
+        print(f"   Time-based split:")
+        if time_col in df.columns:
+            print(f"   Train period: {df_sorted[time_col].iloc[0]} ~ {df_sorted[time_col].iloc[val_start_idx-1]}")
+            print(f"   Validation period: {df_sorted[time_col].iloc[val_start_idx]} ~ {df_sorted[time_col].iloc[test_start_idx-1]}")
+            print(f"   Test period: {df_sorted[time_col].iloc[test_start_idx]} ~ {df_sorted[time_col].iloc[-1]}")
+        
+    else:
+        # Fallback to random split if time column not available
+        print(f"   Warning: Time column '{time_col}' not found. Using random split.")
+        X_temp, X_test, y_temp, y_test = train_test_split(
+            X, y, test_size=test_size, random_state=42
+        )
+        val_size_adjusted = val_size / (1 - test_size)
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_temp, y_temp, test_size=val_size_adjusted, random_state=42
+        )
+    
+    return X_train, X_val, X_test, y_train, y_val, y_test
+
+
 def train_price_prediction_model(df: pd.DataFrame,
                                 target_col: str = 'price',
                                 model_type: str = 'random_forest',
                                 test_size: float = 0.2,
                                 val_size: float = 0.1,
-                                save_dir: str = 'models') -> Dict:
+                                save_dir: str = 'models',
+                                use_time_split: bool = True) -> Dict:
     """Complete training pipeline"""
     
     print("=" * 80)
@@ -174,18 +227,23 @@ def train_price_prediction_model(df: pd.DataFrame,
     
     # Split data
     print("\n2. Splitting data...")
-    X_temp, X_test, y_temp, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=42
-    )
+    if use_time_split:
+        X_train, X_val, X_test, y_train, y_val, y_test = split_data_by_time(
+            df, X, y, test_size=test_size, val_size=val_size
+        )
+    else:
+        print("   Using random split...")
+        X_temp, X_test, y_temp, y_test = train_test_split(
+            X, y, test_size=test_size, random_state=42
+        )
+        val_size_adjusted = val_size / (1 - test_size)
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_temp, y_temp, test_size=val_size_adjusted, random_state=42
+        )
     
-    val_size_adjusted = val_size / (1 - test_size)
-    X_train, X_val, y_train, y_val = train_test_split(
-        X_temp, y_temp, test_size=val_size_adjusted, random_state=42
-    )
-    
-    print(f"   Train: {X_train.shape[0]} samples")
-    print(f"   Validation: {X_val.shape[0]} samples")
-    print(f"   Test: {X_test.shape[0]} samples")
+    print(f"   Train: {X_train.shape[0]} samples ({X_train.shape[0]/len(df)*100:.1f}%)")
+    print(f"   Validation: {X_val.shape[0]} samples ({X_val.shape[0]/len(df)*100:.1f}%)")
+    print(f"   Test: {X_test.shape[0]} samples ({X_test.shape[0]/len(df)*100:.1f}%)")
     
     # Encode categorical features
     print("\n3. Encoding categorical features...")

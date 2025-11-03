@@ -55,6 +55,7 @@ def generate_report(models_dir='models', output_path='TRAINING_REPORT.md'):
 - **모델 타입**: Random Forest Regressor
 - **데이터셋**: 전체 데이터베이스 데이터 (제한 없음)
 - **데이터 분할**: Train 70%, Validation 10%, Test 20%
+- **분할 방식**: 시간 순서 기반 분할 (최근 데이터를 테스트 세트로 사용)
 
 ---
 

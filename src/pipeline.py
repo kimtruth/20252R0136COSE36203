@@ -65,7 +65,8 @@ def run_pipeline(
         model_type=model_type,
         test_size=test_size,
         val_size=val_size,
-        save_dir='models'
+        save_dir='models',
+        use_time_split=True  # Use time-based split for time series data
     )
     
     # Step 3: Summary
