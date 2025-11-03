@@ -8,3 +8,12 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Data files (large files)
+data/processed/*.parquet
+!data/processed/.gitkeep
+
+# Model files (large files)
+models/*.joblib
+models/*.json
+!models/.gitkeep
