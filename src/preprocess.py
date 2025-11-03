@@ -204,6 +204,62 @@ def flatten_payload_json(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add engineered features to improve model performance"""
+    df = df.copy()
+    
+    # 1. Total attack power (PAD + MAD)
+    if 'detail_PAD_sum' in df.columns and 'detail_MAD_sum' in df.columns:
+        df['total_attack'] = df['detail_PAD_sum'] + df['detail_MAD_sum']
+    
+    # 2. Total attack power (max values)
+    if 'detail_PAD_max' in df.columns and 'detail_MAD_max' in df.columns:
+        df['total_attack_max'] = df['detail_PAD_max'] + df['detail_MAD_max']
+    
+    # 3. Total stat points (STR + DEX + INT + LUK)
+    stat_cols = ['detail_scroll_STR_sum', 'detail_scroll_DEX_sum', 
+                 'detail_scroll_INT_sum', 'detail_scroll_LUK_sum']
+    if all(col in df.columns for col in stat_cols):
+        df['total_stat_sum'] = df[stat_cols].sum(axis=1)
+    
+    # 4. Stat efficiency (total stats per scroll count)
+    if 'total_stat_sum' in df.columns and 'detail_scroll_count' in df.columns:
+        df['stat_efficiency'] = df['total_stat_sum'] / (df['detail_scroll_count'] + 1)
+        df['stat_efficiency'] = df['stat_efficiency'].replace([np.inf, -np.inf], 0).fillna(0)
+    
+    # 5. Attack efficiency (total attack per scroll count)
+    if 'total_attack' in df.columns and 'detail_scroll_count' in df.columns:
+        df['attack_efficiency'] = df['total_attack'] / (df['detail_scroll_count'] + 1)
+        df['attack_efficiency'] = df['attack_efficiency'].replace([np.inf, -np.inf], 0).fillna(0)
+    
+    # 6. Potential + Additional grade combination
+    if 'potential_grade' in df.columns and 'additional_grade' in df.columns:
+        df['total_grade'] = df['potential_grade'] + df['additional_grade']
+    
+    # 7. Star force efficiency (star force per potential grade)
+    if 'payload_star_force' in df.columns and 'potential_grade' in df.columns:
+        df['star_force_efficiency'] = df['payload_star_force'] / (df['potential_grade'] + 1)
+        df['star_force_efficiency'] = df['star_force_efficiency'].replace([np.inf, -np.inf], 0).fillna(0)
+    
+    # 8. Total option count (potential + additional)
+    pot_count_col = 'potential_options_count' if 'potential_options_count' in df.columns else None
+    add_count_col = 'additional_options_count' if 'additional_options_count' in df.columns else None
+    if pot_count_col and add_count_col:
+        df['total_options_count'] = df[pot_count_col] + df[add_count_col]
+    
+    # 9. Defense ratio (PDD / total attack)
+    if 'detail_PDD_sum' in df.columns and 'total_attack' in df.columns:
+        df['defense_ratio'] = df['detail_PDD_sum'] / (df['total_attack'] + 1)
+        df['defense_ratio'] = df['defense_ratio'].replace([np.inf, -np.inf], 0).fillna(0)
+    
+    # 10. HP efficiency (MHP / total attack)
+    if 'detail_MHP_sum' in df.columns and 'total_attack' in df.columns:
+        df['hp_efficiency'] = df['detail_MHP_sum'] / (df['total_attack'] + 1)
+        df['hp_efficiency'] = df['hp_efficiency'].replace([np.inf, -np.inf], 0).fillna(0)
+    
+    return df
+
+
 def preprocess_data(df: pd.DataFrame, target_col: str = 'price') -> pd.DataFrame:
     """Main preprocessing function"""
     df = df.copy()
@@ -219,6 +275,10 @@ def preprocess_data(df: pd.DataFrame, target_col: str = 'price') -> pd.DataFrame
     # Extract time features
     print("Extracting time features...")
     df = extract_time_features(df)
+    
+    # Add engineered features
+    print("Adding engineered features...")
+    df = add_engineered_features(df)
     
     # Handle categorical variables
     print("Handling categorical variables...")
