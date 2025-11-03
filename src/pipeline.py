@@ -92,7 +92,7 @@ def run_pipeline(
     print("=" * 80)
     try:
         from src.generate_report import generate_report
-        report_path = generate_report(save_dir='models', output_path='TRAINING_REPORT.md')
+        report_path = generate_report(models_dir='models', output_path='TRAINING_REPORT.md')
         print(f"\nTraining report generated: {report_path}")
     except Exception as e:
         print(f"Warning: Could not generate report: {e}")
