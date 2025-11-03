@@ -90,6 +90,47 @@ uv run python src/preprocess.py
 uv run python src/train.py
 ```
 
+### 5. 가격 예측 (테스트)
+
+훈련된 모델을 사용하여 새로운 아이템의 가격을 예측할 수 있습니다.
+
+```bash
+# JSON 파일로 예측
+uv run python src/predict.py --json-file <파일경로>
+
+# JSON 문자열로 예측
+uv run python src/predict.py --json-string '{"name": "...", "item_id": 1004423, ...}'
+
+# 인터랙티브 모드
+uv run python src/predict.py --interactive
+
+# 예제 실행 (기본 예제 사용)
+uv run python src/predict.py
+```
+
+**입력 형식**: payload_json 형태의 딕셔너리 또는 전체 데이터베이스 행 구조
+
+**예제**:
+```python
+from src.predict import predict_price
+
+payload_json = {
+    "name": "앱솔랩스 메이지크라운",
+    "item_id": 1004423,
+    "star_force": 22,
+    "potential_grade": 4,
+    "additional_grade": 4,
+    "payload_json": {
+        "detail_json": "...",  # JSON 문자열 또는 딕셔너리
+        "summary_json": "...",
+        # ... 기타 필드
+    }
+}
+
+result = predict_price(payload_json)
+print(f"예측 가격: {result['predicted_price_formatted']} 메소")
+```
+
 ## 데이터 구조
 
 ### 입력 데이터 (auction_history 테이블)
