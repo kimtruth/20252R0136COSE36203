@@ -13,6 +13,13 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from typing import Tuple, Dict, List
 import json
 
+try:
+    import lightgbm as lgb
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+    print("Warning: LightGBM not available. Install with: pip install lightgbm")
+
 
 def prepare_features(df: pd.DataFrame, target_col: str = 'price') -> Tuple[pd.DataFrame, pd.Series]:
     """Prepare features and target for model training"""
@@ -94,6 +101,8 @@ def scale_features(X_train: pd.DataFrame,
 def train_model(X_train: pd.DataFrame, 
                 y_train: pd.Series,
                 model_type: str = 'random_forest',
+                X_val: pd.DataFrame = None,
+                y_val: pd.Series = None,
                 **kwargs) -> Tuple[object, Dict]:
     """Train a regression model"""
     
@@ -106,6 +115,9 @@ def train_model(X_train: pd.DataFrame,
             random_state=42,
             n_jobs=-1
         )
+        print(f"Training {model_type} model...")
+        model.fit(X_train, y_train)
+        
     elif model_type == 'gradient_boosting':
         model = GradientBoostingRegressor(
             n_estimators=kwargs.get('n_estimators', 100),
@@ -113,11 +125,40 @@ def train_model(X_train: pd.DataFrame,
             learning_rate=kwargs.get('learning_rate', 0.1),
             random_state=42
         )
-    else:
-        raise ValueError(f"Unknown model type: {model_type}")
+        print(f"Training {model_type} model...")
+        model.fit(X_train, y_train)
+        
+    elif model_type == 'lightgbm':
+        if not LIGHTGBM_AVAILABLE:
+            raise ValueError("LightGBM is not installed. Install with: pip install lightgbm")
+        
+        print(f"Training {model_type} model...")
+        model = lgb.LGBMRegressor(
+            n_estimators=kwargs.get('n_estimators', 100),
+            max_depth=kwargs.get('max_depth', -1),
+            learning_rate=kwargs.get('learning_rate', 0.1),
+            num_leaves=kwargs.get('num_leaves', 31),
+            feature_fraction=kwargs.get('feature_fraction', 0.9),
+            bagging_fraction=kwargs.get('bagging_fraction', 0.8),
+            bagging_freq=kwargs.get('bagging_freq', 5),
+            min_child_samples=kwargs.get('min_child_samples', 20),
+            random_state=42,
+            n_jobs=-1,
+            verbose=-1
+        )
+        
+        # Use validation set for early stopping if available
+        if X_val is not None and y_val is not None:
+            model.fit(
+                X_train, y_train,
+                eval_set=[(X_val, y_val)],
+                callbacks=[lgb.early_stopping(stopping_rounds=10, verbose=False)]
+            )
+        else:
+            model.fit(X_train, y_train)
     
-    print(f"Training {model_type} model...")
-    model.fit(X_train, y_train)
+    else:
+        raise ValueError(f"Unknown model type: {model_type}. Available: random_forest, gradient_boosting, lightgbm")
     
     # Get feature importance
     feature_importance = {}
@@ -259,9 +300,18 @@ def train_price_prediction_model(df: pd.DataFrame,
     
     # Train model
     print("\n5. Training model...")
-    model, feature_importance = train_model(
-        X_train_scaled, y_train, model_type=model_type
-    )
+    # Pass validation set for LightGBM early stopping
+    if model_type == 'lightgbm':
+        model, feature_importance = train_model(
+            X_train_scaled, y_train, 
+            model_type=model_type,
+            X_val=X_val_scaled,
+            y_val=y_val
+        )
+    else:
+        model, feature_importance = train_model(
+            X_train_scaled, y_train, model_type=model_type
+        )
     
     # Evaluate
     print("\n6. Evaluating model...")
@@ -295,20 +345,31 @@ def train_price_prediction_model(df: pd.DataFrame,
     print("\n7. Saving model and artifacts...")
     os.makedirs(save_dir, exist_ok=True)
     
-    model_path = os.path.join(save_dir, 'price_prediction_model.joblib')
-    scaler_path = os.path.join(save_dir, 'scaler.joblib')
-    encoders_path = os.path.join(save_dir, 'label_encoders.joblib')
-    feature_importance_path = os.path.join(save_dir, 'feature_importance.json')
-    metrics_path = os.path.join(save_dir, 'metrics.json')
+    # Save with model type suffix to keep separate models
+    model_suffix = f'_{model_type}' if model_type != 'random_forest' else ''
+    model_path = os.path.join(save_dir, f'price_prediction_model{model_suffix}.joblib')
+    scaler_path = os.path.join(save_dir, f'scaler{model_suffix}.joblib')
+    encoders_path = os.path.join(save_dir, f'label_encoders{model_suffix}.joblib')
+    feature_importance_path = os.path.join(save_dir, f'feature_importance{model_suffix}.json')
+    metrics_path = os.path.join(save_dir, f'metrics{model_suffix}.json')
+    
+    # Also save scaler and encoders without suffix for compatibility (use latest)
+    scaler_path_compat = os.path.join(save_dir, 'scaler.joblib')
+    encoders_path_compat = os.path.join(save_dir, 'label_encoders.joblib')
     
     joblib.dump(model, model_path)
     joblib.dump(scaler, scaler_path)
     joblib.dump(label_encoders, encoders_path)
     
+    # Save compatibility versions (for predict.py to use latest)
+    joblib.dump(scaler, scaler_path_compat)
+    joblib.dump(label_encoders, encoders_path_compat)
+    
     with open(feature_importance_path, 'w') as f:
         json.dump(feature_importance, f, indent=2)
     
     all_metrics = {**train_metrics, **val_metrics, **test_metrics}
+    all_metrics['model_type'] = model_type  # Add model type to metrics
     with open(metrics_path, 'w') as f:
         json.dump(all_metrics, f, indent=2)
     

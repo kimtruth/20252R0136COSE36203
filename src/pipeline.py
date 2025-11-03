@@ -92,8 +92,14 @@ def run_pipeline(
     print("=" * 80)
     try:
         from src.generate_report import generate_report
-        report_path = generate_report(models_dir='models', output_path='TRAINING_REPORT.md')
+        report_filename = f'TRAINING_REPORT_{model_type}.md' if model_type != 'random_forest' else 'TRAINING_REPORT.md'
+        report_path = generate_report(models_dir='models', output_path=report_filename)
         print(f"\nTraining report generated: {report_path}")
+        
+        # Generate comparison if multiple models exist
+        from src.compare_models import compare_models
+        compare_models(models_dir='models', output_path='MODEL_COMPARISON.md')
+        print(f"Model comparison report generated: MODEL_COMPARISON.md")
     except Exception as e:
         print(f"Warning: Could not generate report: {e}")
     
@@ -112,7 +118,7 @@ def main():
         '--model',
         type=str,
         default='random_forest',
-        choices=['random_forest', 'gradient_boosting'],
+        choices=['random_forest', 'gradient_boosting', 'lightgbm'],
         help='Model type to train'
     )
     parser.add_argument(
