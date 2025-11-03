@@ -85,6 +85,17 @@ def run_pipeline(
     print("\nModel and artifacts saved in 'models/' directory")
     print("Preprocessed data saved in 'data/processed/' directory")
     
+    # Generate report
+    print("\n" + "=" * 80)
+    print("STEP 4: GENERATING REPORT")
+    print("=" * 80)
+    try:
+        from src.generate_report import generate_report
+        report_path = generate_report(save_dir='models', output_path='TRAINING_REPORT.md')
+        print(f"\nTraining report generated: {report_path}")
+    except Exception as e:
+        print(f"Warning: Could not generate report: {e}")
+    
     return results
 
 

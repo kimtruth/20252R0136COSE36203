@@ -14,11 +14,9 @@ def main():
     - data_limit: Limit number of rows (None for all data, use small number for testing)
     - model_type: 'random_forest' or 'gradient_boosting'
     """
-    # Run pipeline with default settings
-    # For testing, use a small limit (e.g., 10000)
-    # For full training, set data_limit=None
+    # Run pipeline with ALL data from database
     run_pipeline(
-        data_limit=10000,  # Set to None for full dataset
+        data_limit=None,  # Use all data from database
         model_type='random_forest',
         test_size=0.2,
         val_size=0.1,
