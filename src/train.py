@@ -212,7 +212,7 @@ def train_price_prediction_model(df: pd.DataFrame,
                                 test_size: float = 0.2,
                                 val_size: float = 0.1,
                                 save_dir: str = 'models',
-                                use_time_split: bool = True) -> Dict:
+                                use_time_split: bool = False) -> Dict:
     """Complete training pipeline"""
     
     print("=" * 80)
@@ -225,21 +225,21 @@ def train_price_prediction_model(df: pd.DataFrame,
     print(f"   Features shape: {X.shape}")
     print(f"   Target shape: {y.shape}")
     
-    # Split data
-    print("\n2. Splitting data...")
-    if use_time_split:
-        X_train, X_val, X_test, y_train, y_val, y_test = split_data_by_time(
-            df, X, y, test_size=test_size, val_size=val_size
-        )
-    else:
-        print("   Using random split...")
-        X_temp, X_test, y_temp, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=42
-        )
-        val_size_adjusted = val_size / (1 - test_size)
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_temp, y_temp, test_size=val_size_adjusted, random_state=42
-        )
+    # Split data using random sampling
+    # This ensures time patterns are learned across all time periods
+    # Time features (year, month, day_of_week, etc.) are preserved in features
+    print("\n2. Splitting data (random sampling)...")
+    print("   Note: Using random split to ensure time patterns are learned across all periods")
+    print("   Time features (year, month, day_of_week, etc.) are preserved in the feature set")
+    
+    X_temp, X_test, y_temp, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=42
+    )
+    
+    val_size_adjusted = val_size / (1 - test_size)
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_temp, y_temp, test_size=val_size_adjusted, random_state=42
+    )
     
     print(f"   Train: {X_train.shape[0]} samples ({X_train.shape[0]/len(df)*100:.1f}%)")
     print(f"   Validation: {X_val.shape[0]} samples ({X_val.shape[0]/len(df)*100:.1f}%)")

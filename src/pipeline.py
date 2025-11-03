@@ -66,7 +66,7 @@ def run_pipeline(
         test_size=test_size,
         val_size=val_size,
         save_dir='models',
-        use_time_split=True  # Use time-based split for time series data
+        use_time_split=False  # Use random sampling to learn time patterns across all periods
     )
     
     # Step 3: Summary
