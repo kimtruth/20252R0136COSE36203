@@ -19,3 +19,6 @@ models/*.json
 !models/.gitkeep
 
 .DS_STORE
+
+# Environment variables
+.env
