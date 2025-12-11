@@ -17,3 +17,5 @@ data/processed/*.parquet
 models/*.joblib
 models/*.json
 !models/.gitkeep
+
+.DS_STORE

@@ -51,6 +51,22 @@ uv sync
 source .venv/bin/activate  # macOS/Linux
 ```
 
+### 환경 변수 설정
+
+프로젝트는 민감한 데이터베이스 자격 증명을 환경 변수로부터 읽습니다. 실행 전에 다음 값을 설정하세요:
+
+```bash
+export MAPLE_DB_HOST=<your-host>
+export MAPLE_DB_PORT=3306
+export MAPLE_DB_USER=<your-user>
+export MAPLE_DB_PASSWORD=<your-password>
+export MAPLE_DB_NAME=<your-database>
+export MAPLE_DB_CHARSET=utf8mb4      # 선택
+export MAPLE_TABLE_NAME=auction_history  # 선택
+```
+
+`.env.example` 파일을 복사하여 `.env`를 만든 뒤, `uv run` 또는 `python` 실행 전에 `source .env` 형태로 불러와도 됩니다.
+
 ## 사용 방법
 
 ### 1. 데이터베이스 연결 확인
@@ -204,4 +220,3 @@ uv run python main.py --limit 1000
 - 대용량 데이터셋의 경우 메모리 사용량을 고려하여 배치 처리나 샘플링을 사용하세요
 - 데이터베이스 쿼리는 인덱스를 활용하여 최적화할 수 있습니다
 - 모델 성능 향상을 위해 하이퍼파라미터 튜닝을 고려하세요
-

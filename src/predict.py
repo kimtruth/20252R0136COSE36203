@@ -15,6 +15,12 @@ from src.preprocess import (
     extract_time_features
 )
 
+# Import EnsembleModel for unpickling saved ensemble models
+try:
+    from src.ensemble import EnsembleModel
+except ImportError:
+    pass
+
 
 def flatten_payload_json_for_prediction(payload_json: Dict) -> Dict:
     """Flatten payload_json for prediction (same as preprocessing)"""
@@ -149,9 +155,9 @@ def prepare_features_for_prediction(payload_json: Dict,
 
 
 def predict_price(payload_json: Dict,
-                  model_path: str = 'models/price_prediction_model.joblib',
-                  scaler_path: str = 'models/scaler.joblib',
-                  encoders_path: str = 'models/label_encoders.joblib',
+                  model_path: str = 'models/price_prediction_model_lightgbm.joblib',
+                  scaler_path: str = 'models/scaler_lightgbm.joblib',
+                  encoders_path: str = 'models/label_encoders_lightgbm.joblib',
                   created_at: Optional[str] = None,
                   trade_date: Optional[str] = None,
                   register_date: Optional[str] = None) -> Dict[str, Any]:
@@ -216,6 +222,18 @@ def predict_price(payload_json: Dict,
         if isinstance(row_data['payload_json'], dict) and 'register_date' in row_data['payload_json']:
             row_data['register_date'] = row_data['payload_json']['register_date']
     
+    # Ensure payload_json is parsed if it's a string (before creating DataFrame)
+    if 'payload_json' in row_data:
+        payload_val = row_data['payload_json']
+        if isinstance(payload_val, str):
+            try:
+                import json
+                row_data['payload_json'] = json.loads(payload_val)
+            except (json.JSONDecodeError, TypeError):
+                # If parsing fails, keep as is or set to empty dict
+                if not isinstance(payload_val, dict):
+                    row_data['payload_json'] = {}
+    
     # Create DataFrame with single row
     df = pd.DataFrame([row_data])
     
@@ -244,11 +262,28 @@ def predict_price(payload_json: Dict,
             X[col] = pd.to_numeric(X[col], errors='coerce')
     
     # Ensure all expected features are present
-    if hasattr(model, 'feature_names_in_'):
+    # Handle ensemble model (has rf_model and lgb_model)
+    expected_features = None
+    if hasattr(model, 'rf_model') and hasattr(model, 'lgb_model'):
+        # Ensemble model: get features from one of the internal models
+        if hasattr(model.rf_model, 'feature_names_in_'):
+            expected_features = list(model.rf_model.feature_names_in_)
+        elif hasattr(model.lgb_model, 'feature_names_in_'):
+            expected_features = list(model.lgb_model.feature_names_in_)
+    elif hasattr(model, 'feature_names_in_'):
+        # Regular model
         expected_features = list(model.feature_names_in_)
+    
+    if expected_features:
+        # Remove features that weren't seen during training
+        unseen_features = [f for f in X.columns if f not in expected_features]
+        if unseen_features:
+            # Drop unseen features (these are new engineered features not in training)
+            X = X.drop(columns=unseen_features)
+        
+        # Add missing features with default values
         missing_features = [f for f in expected_features if f not in X.columns]
         if missing_features:
-            print(f"Warning: Missing features: {missing_features}")
             for feat in missing_features:
                 # Try to determine if it should be numeric or categorical
                 if any(x in feat.lower() for x in ['id', 'name']):
@@ -269,7 +304,10 @@ def predict_price(payload_json: Dict,
     
     # Get feature importance if available
     feature_importance = {}
-    if hasattr(model, 'feature_importances_'):
+    # Check if it's an ensemble model (has get_feature_importance method)
+    if hasattr(model, 'get_feature_importance'):
+        feature_importance = model.get_feature_importance()
+    elif hasattr(model, 'feature_importances_'):
         for idx, importance in enumerate(model.feature_importances_):
             feature_importance[X.columns[idx]] = float(importance)
     
@@ -310,10 +348,130 @@ def format_price(price: float) -> str:
         return f"{price:,.0f}"
 
 
+def predict_from_database(n_samples: int = 5,
+                          model_path: str = 'models/price_prediction_model_lightgbm.joblib',
+                          scaler_path: str = 'models/scaler_lightgbm.joblib',
+                          encoders_path: str = 'models/label_encoders_lightgbm.joblib') -> None:
+    """
+    Predict prices for random samples from database and compare with actual prices
+    
+    Args:
+        n_samples: Number of random samples to fetch from database
+        model_path: Path to model file
+        scaler_path: Path to scaler file
+        encoders_path: Path to label encoders file
+    """
+    from src.db_connection import get_db_connection
+    from src.config import TABLE_NAME
+    
+    print("=" * 80)
+    print(f"데이터베이스에서 랜덤 {n_samples}개 샘플 가져오기")
+    print("=" * 80)
+    
+    # Connect to database
+    conn = get_db_connection()
+    
+    try:
+        with conn.cursor() as cursor:
+            # Get random samples
+            query = f"""
+                SELECT * FROM {TABLE_NAME}
+                LIMIT {n_samples}
+            """
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            
+            if not rows:
+                print("데이터베이스에서 샘플을 찾을 수 없습니다.")
+                return
+            
+            print(f"\n✓ {len(rows)}개 샘플 로드 완료\n")
+            
+            # Load model and preprocessors
+            print("모델 로딩 중...")
+            model = joblib.load(model_path)
+            scaler = joblib.load(scaler_path)
+            label_encoders = joblib.load(encoders_path)
+            print("✓ 모델 로드 완료\n")
+            
+            results = []
+            
+            # Predict for each sample
+            for idx, row in enumerate(rows, 1):
+                try:
+                    # Convert row to dict if needed
+                    if isinstance(row, dict):
+                        row_data = row
+                    else:
+                        row_data = dict(row)
+                    
+                    # Predict
+                    result = predict_price(
+                        row_data,
+                        model_path=model_path,
+                        scaler_path=scaler_path,
+                        encoders_path=encoders_path
+                    )
+                    
+                    actual_price = row_data.get('price', 0)
+                    predicted_price = result['predicted_price']
+                    error = abs(predicted_price - actual_price)
+                    error_pct = (error / actual_price * 100) if actual_price > 0 else 0
+                    
+                    results.append({
+                        'index': idx,
+                        'item_name': result['item_name'],
+                        'item_id': result['item_id'],
+                        'actual_price': actual_price,
+                        'predicted_price': predicted_price,
+                        'error': error,
+                        'error_pct': error_pct
+                    })
+                    
+                except Exception as e:
+                    print(f"⚠ 샘플 {idx} 예측 실패: {e}")
+                    continue
+            
+            # Print results
+            print("=" * 80)
+            print("예측 결과 요약")
+            print("=" * 80)
+            
+            total_error = 0
+            total_error_pct = 0
+            valid_samples = 0
+            
+            for res in results:
+                print(f"\n[샘플 {res['index']}]")
+                print(f"  아이템명: {res['item_name']}")
+                print(f"  아이템 ID: {res['item_id']}")
+                print(f"  실제 가격: {res['actual_price']:,.0f} 메소 ({format_price(res['actual_price'])})")
+                print(f"  예측 가격: {res['predicted_price']:,.0f} 메소 ({format_price(res['predicted_price'])})")
+                print(f"  오차: {res['error']:,.0f} 메소 ({format_price(res['error'])}, {res['error_pct']:.2f}%)")
+                
+                total_error += res['error']
+                total_error_pct += res['error_pct']
+                valid_samples += 1
+            
+            if valid_samples > 0:
+                avg_error = total_error / valid_samples
+                avg_error_pct = total_error_pct / valid_samples
+                
+                print("\n" + "=" * 80)
+                print("전체 통계")
+                print("=" * 80)
+                print(f"평균 절대 오차: {avg_error:,.0f} 메소 ({format_price(avg_error)})")
+                print(f"평균 오차율: {avg_error_pct:.2f}%")
+                print(f"성공한 샘플: {valid_samples}/{len(rows)}")
+            
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description='Predict item price from payload_json')
+    parser = argparse.ArgumentParser(description='Predict item price from payload_json or database')
     parser.add_argument(
         '--json-file',
         type=str,
@@ -330,102 +488,95 @@ if __name__ == "__main__":
         help='Interactive mode: enter JSON interactively'
     )
     parser.add_argument(
+        '--db-samples',
+        type=int,
+        default=5,
+        help='Number of random samples to fetch from database (default: 5)'
+    )
+    parser.add_argument(
+        '--use-db',
+        action='store_true',
+        help='Use random samples from database (default mode)'
+    )
+    parser.add_argument(
         '--model',
         type=str,
-        default='models/price_prediction_model.joblib',
-        help='Path to model file'
+        default='models/price_prediction_model_lightgbm.joblib',
+        help='Path to model file (default: LightGBM model)'
     )
     parser.add_argument(
         '--scaler',
         type=str,
-        default='models/scaler.joblib',
-        help='Path to scaler file'
+        default='models/scaler_lightgbm.joblib',
+        help='Path to scaler file (default: LightGBM scaler)'
     )
     parser.add_argument(
         '--encoders',
         type=str,
-        default='models/label_encoders.joblib',
-        help='Path to label encoders file'
+        default='models/label_encoders_lightgbm.joblib',
+        help='Path to label encoders file (default: LightGBM encoders)'
     )
     
     args = parser.parse_args()
     
-    # Get payload_json
-    if args.json_file:
-        with open(args.json_file, 'r', encoding='utf-8') as f:
-            payload_json = json.load(f)
-    elif args.json_string:
-        payload_json = json.loads(args.json_string)
-    elif args.interactive:
-        print("Enter payload_json (paste JSON and press Enter, then Ctrl+D or Ctrl+Z to finish):")
-        payload_json = json.load(sys.stdin)
-    else:
-        # Example: use sample data
-        print("No input provided. Using example...")
-        print("Usage: python src/predict.py --json-file <file> or --json-string '<json>' or --interactive")
-        print("\nExample:")
-        example_json = {
-            "name": "앱솔랩스 메이지크라운",
-            "item_id": 1004423,
-            "count": 1,
-            "price": 28000000000,
-            "star_force": 22,
-            "potential_grade": 4,
-            "additional_grade": 4,
-            "scroll_count": 12,
-            "detail_json": json.dumps({
-                "stats": {
-                    "base": {"STR": 0, "DEX": 0, "INT": 0, "LUK": 0},
-                    "scroll": {
-                        "STR": [0, 0, 0, 0],
-                        "DEX": [0, 20, 0, 0],
-                        "INT": [45, 65, 84, 131],
-                        "LUK": [45, 0, 0, 131]
-                    },
-                    "MHP": [0, 0, 1440, 255],
-                    "MAD": [3, 4, 1, 92],
-                    "PAD": [0, 0, 0, 92],
-                    "PDD": [400, 0, 120, 1022],
-                    "percent": {"IMDR": [10, 0, 0]},
-                    "requirements": {"scroll_count": 12}
-                },
-                "potential_options": ["스킬 재사용 대기시간 -2초", "스킬 재사용 대기시간 -2초", "최대 HP +9%"],
-                "additional_options": ["스킬 재사용 대기시간 -1초", "캐릭터 기준 9레벨 당 STR +1", "마력 +14"]
-            })
-        }
-        payload_json = example_json
-    
-    # Predict
-    try:
-        result = predict_price(
-            payload_json,
+    # Default: use database samples
+    if args.use_db or (not args.json_file and not args.json_string and not args.interactive):
+        predict_from_database(
+            n_samples=args.db_samples,
             model_path=args.model,
             scaler_path=args.scaler,
             encoders_path=args.encoders
         )
+    else:
+        # Get payload_json from other sources
+        if args.json_file:
+            with open(args.json_file, 'r', encoding='utf-8') as f:
+                payload_json = json.load(f)
+        elif args.json_string:
+            payload_json = json.loads(args.json_string)
+        elif args.interactive:
+            print("Enter payload_json (paste JSON and press Enter, then Ctrl+D or Ctrl+Z to finish):")
+            payload_json = json.load(sys.stdin)
+        else:
+            print("No input provided.")
+            print("Usage:")
+            print("  python src/predict.py --use-db --db-samples 10  # Use database (default)")
+            print("  python src/predict.py --json-file <file>       # Use JSON file")
+            print("  python src/predict.py --json-string '<json>'  # Use JSON string")
+            print("  python src/predict.py --interactive            # Interactive mode")
+            sys.exit(1)
         
-        print("\n" + "=" * 80)
-        print("가격 예측 결과")
-        print("=" * 80)
-        print(f"\n아이템명: {result['item_name']}")
-        print(f"아이템 ID: {result['item_id']}")
-        print(f"\n예측 가격: {result['predicted_price_formatted']} 메소 ({format_price(result['predicted_price'])} 메소)")
-        
-        if 'price' in payload_json:
-            actual_price = payload_json['price']
-            error = abs(result['predicted_price'] - actual_price)
-            error_pct = (error / actual_price * 100) if actual_price > 0 else 0
-            print(f"\n실제 가격: {actual_price:,.0f} 메소 ({format_price(actual_price)} 메소)")
-            print(f"오차: {error:,.0f} 메소 ({format_price(error)} 메소, {error_pct:.2f}%)")
-        
-        print("\n" + "=" * 80)
-        print("주요 특징 중요도 (Top 5)")
-        print("=" * 80)
-        for feature, importance in result['feature_importance_top5'].items():
-            print(f"  {feature}: {importance:.4f}")
-        
-    except Exception as e:
-        print(f"Error during prediction: {e}")
-        import traceback
-        traceback.print_exc()
+        # Predict
+        try:
+            result = predict_price(
+                payload_json,
+                model_path=args.model,
+                scaler_path=args.scaler,
+                encoders_path=args.encoders
+            )
+            
+            print("\n" + "=" * 80)
+            print("가격 예측 결과")
+            print("=" * 80)
+            print(f"\n아이템명: {result['item_name']}")
+            print(f"아이템 ID: {result['item_id']}")
+            print(f"\n예측 가격: {result['predicted_price_formatted']} 메소 ({format_price(result['predicted_price'])} 메소)")
+            
+            if 'price' in payload_json:
+                actual_price = payload_json['price']
+                error = abs(result['predicted_price'] - actual_price)
+                error_pct = (error / actual_price * 100) if actual_price > 0 else 0
+                print(f"\n실제 가격: {actual_price:,.0f} 메소 ({format_price(actual_price)} 메소)")
+                print(f"오차: {error:,.0f} 메소 ({format_price(error)} 메소, {error_pct:.2f}%)")
+            
+            print("\n" + "=" * 80)
+            print("주요 특징 중요도 (Top 5)")
+            print("=" * 80)
+            for feature, importance in result['feature_importance_top5'].items():
+                print(f"  {feature}: {importance:.4f}")
+            
+        except Exception as e:
+            print(f"Error during prediction: {e}")
+            import traceback
+            traceback.print_exc()
 

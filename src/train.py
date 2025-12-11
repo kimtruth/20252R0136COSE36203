@@ -133,26 +133,47 @@ def train_model(X_train: pd.DataFrame,
             raise ValueError("LightGBM is not installed. Install with: pip install lightgbm")
         
         print(f"Training {model_type} model...")
-        model = lgb.LGBMRegressor(
-            n_estimators=kwargs.get('n_estimators', 100),
-            max_depth=kwargs.get('max_depth', -1),
-            learning_rate=kwargs.get('learning_rate', 0.1),
-            num_leaves=kwargs.get('num_leaves', 31),
-            feature_fraction=kwargs.get('feature_fraction', 0.9),
-            bagging_fraction=kwargs.get('bagging_fraction', 0.8),
-            bagging_freq=kwargs.get('bagging_freq', 5),
-            min_child_samples=kwargs.get('min_child_samples', 20),
-            random_state=42,
-            n_jobs=-1,
-            verbose=-1
-        )
+        
+        # Check if hyperparameters are provided (from tuning)
+        # If not, use defaults or load from saved tuning results
+        objective = kwargs.get('objective', 'rmse')  # 'rmse', 'mae', 'quantile'
+        alpha = kwargs.get('alpha', 0.5)  # For quantile regression
+        
+        # Build model with hyperparameters
+        model_params = {
+            'n_estimators': kwargs.get('n_estimators', 100),
+            'max_depth': kwargs.get('max_depth', -1),
+            'learning_rate': kwargs.get('learning_rate', 0.1),
+            'num_leaves': kwargs.get('num_leaves', 31),
+            'feature_fraction': kwargs.get('feature_fraction', 0.9),
+            'bagging_fraction': kwargs.get('bagging_fraction', 0.8),
+            'bagging_freq': kwargs.get('bagging_freq', 5),
+            'min_child_samples': kwargs.get('min_child_samples', 20),
+            'reg_alpha': kwargs.get('reg_alpha', 0.0),
+            'reg_lambda': kwargs.get('reg_lambda', 0.0),
+            'random_state': 42,
+            'n_jobs': -1,
+            'verbose': -1
+        }
+        
+        # Set objective
+        if objective == 'mae':
+            model_params['objective'] = 'mae'
+        elif objective == 'quantile':
+            model_params['objective'] = 'quantile'
+            model_params['alpha'] = alpha
+        else:  # default to rmse
+            model_params['objective'] = 'rmse'
+        
+        model = lgb.LGBMRegressor(**model_params)
         
         # Use validation set for early stopping if available
+        early_stopping_rounds = kwargs.get('early_stopping_rounds', 10)
         if X_val is not None and y_val is not None:
             model.fit(
                 X_train, y_train,
                 eval_set=[(X_val, y_val)],
-                callbacks=[lgb.early_stopping(stopping_rounds=10, verbose=False)]
+                callbacks=[lgb.early_stopping(stopping_rounds=early_stopping_rounds, verbose=False)]
             )
         else:
             model.fit(X_train, y_train)
@@ -253,7 +274,9 @@ def train_price_prediction_model(df: pd.DataFrame,
                                 test_size: float = 0.2,
                                 val_size: float = 0.1,
                                 save_dir: str = 'models',
-                                use_time_split: bool = False) -> Dict:
+                                use_time_split: bool = False,
+                                hyperparameters: Dict = None,
+                                objective: str = 'rmse') -> Dict:
     """Complete training pipeline"""
     
     print("=" * 80)
@@ -300,17 +323,36 @@ def train_price_prediction_model(df: pd.DataFrame,
     
     # Train model
     print("\n5. Training model...")
+    
+    # Load hyperparameters if provided or from saved tuning results
+    if hyperparameters is None and model_type == 'lightgbm':
+        tuning_results_path = os.path.join(save_dir, 'hyperparameter_tuning_results.json')
+        if os.path.exists(tuning_results_path):
+            print(f"   Loading hyperparameters from {tuning_results_path}")
+            with open(tuning_results_path, 'r') as f:
+                tuning_data = json.load(f)
+                hyperparameters = tuning_data.get('best_params', {})
+                print(f"   Using tuned hyperparameters: {list(hyperparameters.keys())}")
+    
+    # Prepare kwargs for model training
+    model_kwargs = {}
+    if hyperparameters:
+        model_kwargs.update(hyperparameters)
+    if model_type == 'lightgbm':
+        model_kwargs['objective'] = objective
+    
     # Pass validation set for LightGBM early stopping
     if model_type == 'lightgbm':
         model, feature_importance = train_model(
             X_train_scaled, y_train, 
             model_type=model_type,
             X_val=X_val_scaled,
-            y_val=y_val
+            y_val=y_val,
+            **model_kwargs
         )
     else:
         model, feature_importance = train_model(
-            X_train_scaled, y_train, model_type=model_type
+            X_train_scaled, y_train, model_type=model_type, **model_kwargs
         )
     
     # Evaluate

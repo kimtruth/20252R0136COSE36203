@@ -257,6 +257,65 @@ def add_engineered_features(df: pd.DataFrame) -> pd.DataFrame:
         df['hp_efficiency'] = df['detail_MHP_sum'] / (df['total_attack'] + 1)
         df['hp_efficiency'] = df['hp_efficiency'].replace([np.inf, -np.inf], 0).fillna(0)
     
+    # 11. Maximum stat (max of STR, DEX, INT, LUK)
+    if all(col in df.columns for col in ['detail_scroll_STR_max', 'detail_scroll_DEX_max', 
+                                          'detail_scroll_INT_max', 'detail_scroll_LUK_max']):
+        df['max_stat'] = df[['detail_scroll_STR_max', 'detail_scroll_DEX_max', 
+                             'detail_scroll_INT_max', 'detail_scroll_LUK_max']].max(axis=1)
+    
+    # 12. Total percent stat (sum of all percent stats)
+    percent_cols = [col for col in df.columns if col.startswith('detail_percent_')]
+    if percent_cols:
+        df['total_percent_stat'] = df[percent_cols].sum(axis=1)
+    
+    # 13. Attack to stat ratio (total attack / total stat)
+    if 'total_attack' in df.columns and 'total_stat_sum' in df.columns:
+        df['attack_stat_ratio'] = df['total_attack'] / (df['total_stat_sum'] + 1)
+        df['attack_stat_ratio'] = df['attack_stat_ratio'].replace([np.inf, -np.inf], 0).fillna(0)
+    
+    # 14. Star force weighted by attack (star_force * total_attack)
+    if 'payload_star_force' in df.columns and 'total_attack' in df.columns:
+        df['star_force_attack_score'] = df['payload_star_force'] * df['total_attack']
+    
+    # 15. Grade weighted attack (total_grade * total_attack)
+    if 'total_grade' in df.columns and 'total_attack' in df.columns:
+        df['grade_attack_score'] = df['total_grade'] * df['total_attack']
+    
+    # 16. Option quality score (has_skill_cooldown + has_stat_percent + has_damage)
+    pot_opt_cols = ['potential_has_skill_cooldown', 'potential_has_stat_percent', 'potential_has_damage']
+    add_opt_cols = ['additional_has_skill_cooldown', 'additional_has_stat_percent', 'additional_has_damage']
+    
+    if all(col in df.columns for col in pot_opt_cols):
+        df['potential_quality_score'] = df[pot_opt_cols].sum(axis=1)
+    if all(col in df.columns for col in add_opt_cols):
+        df['additional_quality_score'] = df[add_opt_cols].sum(axis=1)
+    if 'potential_quality_score' in df.columns and 'additional_quality_score' in df.columns:
+        df['total_quality_score'] = df['potential_quality_score'] + df['additional_quality_score']
+    
+    # 17. Percent damage ratio (if available)
+    if 'detail_percent_Damage_sum' in df.columns and 'total_attack' in df.columns:
+        df['damage_percent_ratio'] = df['detail_percent_Damage_sum'] / (df['total_attack'] + 1)
+        df['damage_percent_ratio'] = df['damage_percent_ratio'].replace([np.inf, -np.inf], 0).fillna(0)
+    
+    # 18. Base stat total (base STR + DEX + INT + LUK)
+    base_stat_cols = ['detail_base_STR', 'detail_base_DEX', 'detail_base_INT', 'detail_base_LUK']
+    if all(col in df.columns for col in base_stat_cols):
+        df['base_stat_total'] = df[base_stat_cols].sum(axis=1)
+    
+    # 19. Scroll enhancement level (scroll_count weighted by star_force)
+    if 'detail_scroll_count' in df.columns and 'payload_star_force' in df.columns:
+        df['enhancement_level'] = df['detail_scroll_count'] * df['payload_star_force']
+    
+    # 20. Price tier estimation (based on multiple factors)
+    # This is a synthetic feature combining multiple important factors
+    if all(col in df.columns for col in ['total_attack_max', 'total_grade', 'payload_star_force']):
+        # Normalize and combine (simplified scoring)
+        df['value_score'] = (
+            (df['total_attack_max'] / (df['total_attack_max'].max() + 1)) * 0.4 +
+            (df['total_grade'] / (df['total_grade'].max() + 1)) * 0.3 +
+            (df['payload_star_force'] / (df['payload_star_force'].max() + 1)) * 0.3
+        )
+    
     return df
 
 
