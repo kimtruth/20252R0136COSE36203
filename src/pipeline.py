@@ -15,18 +15,20 @@ def run_pipeline(
     test_size: float = 0.2,
     val_size: float = 0.1,
     preprocessed_data_path: str = None,
-    save_processed: bool = True
+    save_processed: bool = True,
+    jsonl_path: str = None
 ):
     """
     Run complete E2E pipeline: Extract -> Transform -> Load -> Train -> Evaluate -> Save
     
     Args:
         data_limit: Limit number of rows to load from database (None for all)
-        model_type: Type of model ('random_forest' or 'gradient_boosting')
+        model_type: Type of model ('random_forest', 'gradient_boosting', or 'lightgbm')
         test_size: Proportion of data for test set
         val_size: Proportion of data for validation set
-        preprocessed_data_path: Path to preprocessed data file (if None, will load from DB)
+        preprocessed_data_path: Path to preprocessed data file (if None, will load from DB/file)
         save_processed: Whether to save preprocessed data
+        jsonl_path: Path to JSONL file (for Colab - loads from file instead of database)
     """
     print("=" * 80)
     print("MAPLESTORY ITEM PRICE PREDICTION - E2E PIPELINE")
@@ -53,10 +55,13 @@ def run_pipeline(
         print(f"Loaded {len(df):,} rows from saved file")
         print(f"Note: Using cached preprocessed data. Delete '{final_processed_path}' to reload from database.")
     else:
-        print(f"No preprocessed data found. Loading from database...")
+        if jsonl_path:
+            print(f"No preprocessed data found. Loading from JSONL file: {jsonl_path}")
+        else:
+            print(f"No preprocessed data found. Loading from database...")
         print(f"This may take a while for large datasets...")
         processed_path = final_processed_path if save_processed else None
-        df = load_and_preprocess_data(limit=data_limit, save_path=processed_path)
+        df = load_and_preprocess_data(limit=data_limit, save_path=processed_path, jsonl_path=jsonl_path)
         if save_processed:
             print(f"\n✓ Preprocessed data saved to: {processed_path}")
             print(f"  Next time, this file will be used automatically (faster!)")

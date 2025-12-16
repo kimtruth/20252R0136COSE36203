@@ -4,129 +4,122 @@
 
 ## 프로젝트 개요
 
-이 프로젝트는 MySQL 데이터베이스에 저장된 메이플스토리 아이템 거래 데이터를 사용하여 아이템 가격을 예측하는 회귀 모델을 구축합니다.
+이 프로젝트는 메이플스토리 아이템 거래 데이터(2.6M+ 거래 기록)를 사용하여 아이템 가격을 예측하는 LightGBM 모델을 구축합니다.
+
+### 최신 모델 성능
+
+| Metric | Value |
+|--------|-------|
+| **Test R²** | 0.7885 |
+| **Test MAE** | 427M Meso |
+| **Test MAPE** | 354% |
+| **Log-scale R²** | 0.9691 |
 
 ### 주요 기능
 
-- **데이터 추출 (Extract)**: MySQL 데이터베이스에서 거래 데이터 추출
-- **데이터 변환 (Transform)**: 중첩된 JSON 데이터를 평평한 특징 벡터로 변환
-- **데이터 적재 (Load)**: 전처리된 데이터를 parquet 형식으로 저장
-- **모델 훈련**: Random Forest 및 Gradient Boosting 모델 훈련
-- **모델 평가**: 다양한 지표로 모델 성능 평가
-- **모델 저장**: 훈련된 모델 및 전처리 파이프라인 저장
+- **데이터 추출**: MySQL 또는 JSONL 파일에서 거래 데이터 로드
+- **고급 특징 추출**: 134개 특징 (잠재능력 % 파싱, 아이템 메타데이터 등)
+- **로그 변환**: 가격 범위가 넓은 데이터에 적합한 log1p 변환 적용
+- **LightGBM 모델**: 하이퍼파라미터 튜닝된 Gradient Boosting 모델
+- **모델 저장/로드**: 훈련된 모델 및 전처리 파이프라인 저장
 
 ## 프로젝트 구조
 
 ```
 maple-meso/
-├── src/
-│   ├── config.py              # 데이터베이스 설정
-│   ├── db_connection.py        # 데이터베이스 연결 유틸리티
-│   ├── explore_data.py        # 데이터 탐색 스크립트
-│   ├── preprocess.py          # 데이터 전처리 모듈
-│   ├── train.py               # 모델 훈련 모듈
-│   └── pipeline.py            # E2E 파이프라인
+├── README.md                      # 이 파일
+├── FINAL_REPORT.md               # 최종 보고서
+├── requirements.txt              # Python 의존성
+├── pyproject.toml               # 프로젝트 설정
+├── main.py                      # 기본 실행 스크립트
+│
+├── src/                         # 소스 코드
+│   ├── preprocess.py            # 데이터 전처리 (134개 특징 추출)
+│   ├── train.py                 # 모델 훈련 모듈
+│   ├── train_improved.py        # 개선된 훈련 파이프라인
+│   ├── predict.py               # 가격 예측 인터페이스
+│   ├── ensemble.py              # 앙상블 모델
+│   ├── tune_hyperparameters.py  # 하이퍼파라미터 튜닝
+│   ├── config.py                # 데이터베이스 설정
+│   ├── db_connection.py         # DB 연결 유틸리티
+│   └── pipeline.py              # E2E 파이프라인
+│
 ├── data/
-│   └── processed/             # 전처리된 데이터 저장
-├── models/                    # 훈련된 모델 저장
-├── main.py                    # 메인 실행 스크립트
-├── pyproject.toml             # 프로젝트 의존성
-└── README.md
+│   ├── raw/                     # 원본 데이터
+│   │   └── raw_data.jsonl       # JSONL 형식 거래 데이터
+│   └── processed/               # 전처리된 데이터
+│       └── preprocessed_data.parquet
+│
+├── models/
+│   ├── improved/                # 최신 개선된 모델 ⭐
+│   │   ├── model.joblib         # 훈련된 LightGBM 모델
+│   │   ├── scaler.joblib        # 특징 스케일러
+│   │   ├── label_encoders.joblib # 레이블 인코더
+│   │   ├── feature_importance.json
+│   │   └── metrics.json
+│   ├── archive/                 # 이전 버전 모델
+│   └── hyperparameter_tuning_results.json
+│
+├── docs/                        # 문서
+│   ├── PROGRESS_REPORT.md       # 진행 보고서
+│   ├── MODEL_COMPARISON.md      # 모델 비교
+│   ├── IMPROVEMENT_GUIDE.md     # 개선 가이드
+│   └── colab/                   # Google Colab 관련
+│       ├── maple_meso_colab.ipynb
+│       └── COLAB_SETUP.md
+│
+└── logs/                        # 훈련 로그
+    ├── training_improved.log
+    └── ...
 ```
 
 ## 설치 및 설정
 
 ### 필요 조건
 
-- Python >= 3.11
-- uv 패키지 매니저
+- Python >= 3.10
+- pip 또는 uv 패키지 매니저
 
 ### 설치
 
 ```bash
-# 의존성 설치
+# pip 사용
+pip install -r requirements.txt
+
+# 또는 uv 사용
 uv sync
-
-# 환경 활성화 (선택사항)
-source .venv/bin/activate  # macOS/Linux
 ```
-
-### 환경 변수 설정
-
-프로젝트는 민감한 데이터베이스 자격 증명을 환경 변수로부터 읽습니다. 실행 전에 다음 값을 설정하세요:
-
-```bash
-export MAPLE_DB_HOST=<your-host>
-export MAPLE_DB_PORT=3306
-export MAPLE_DB_USER=<your-user>
-export MAPLE_DB_PASSWORD=<your-password>
-export MAPLE_DB_NAME=<your-database>
-export MAPLE_DB_CHARSET=utf8mb4      # 선택
-export MAPLE_TABLE_NAME=auction_history  # 선택
-```
-
-`.env.example` 파일을 복사하여 `.env`를 만든 뒤, `uv run` 또는 `python` 실행 전에 `source .env` 형태로 불러와도 됩니다.
 
 ## 사용 방법
 
-### 1. 데이터베이스 연결 확인
-
-데이터베이스 설정은 `src/config.py`에 있습니다.
-
-### 2. 데이터 탐색
+### 1. 개선된 모델 훈련 (권장)
 
 ```bash
-uv run python src/explore_data.py
+# JSONL 파일에서 데이터 로드하여 훈련 (DB 연결 불필요)
+python -m src.train_improved --save-dir models
+
+# 샘플로 빠른 테스트
+python -m src.train_improved --sample 50000 --save-dir models
+
+# 로그 변환 없이 훈련
+python -m src.train_improved --no-log-transform --save-dir models
 ```
 
-### 3. 전체 파이프라인 실행
-
-```bash
-# 기본 실행 (10000개 샘플로 테스트)
-uv run python main.py
-
-# 전체 데이터셋으로 실행
-uv run python main.py --limit None
-
-# 커스텀 설정으로 실행
-uv run python src/pipeline.py --limit 50000 --model random_forest
-```
-
-### 4. 개별 단계 실행
-
-#### 데이터 전처리만 실행
-
-```bash
-uv run python src/preprocess.py
-```
-
-#### 모델 훈련만 실행 (전처리된 데이터 필요)
-
-```bash
-uv run python src/train.py
-```
-
-### 5. 가격 예측 (테스트)
-
-훈련된 모델을 사용하여 새로운 아이템의 가격을 예측할 수 있습니다.
+### 2. 가격 예측
 
 ```bash
 # JSON 파일로 예측
-uv run python src/predict.py --json-file <파일경로>
+python src/predict.py --json-file <파일경로>
 
 # JSON 문자열로 예측
-uv run python src/predict.py --json-string '{"name": "...", "item_id": 1004423, ...}'
+python src/predict.py --json-string '{"name": "...", "item_id": 1004423, ...}'
 
 # 인터랙티브 모드
-uv run python src/predict.py --interactive
-
-# 예제 실행 (기본 예제 사용)
-uv run python src/predict.py
+python src/predict.py --interactive
 ```
 
-**입력 형식**: payload_json 형태의 딕셔너리 또는 전체 데이터베이스 행 구조
+### 3. Python에서 사용
 
-**예제**:
 ```python
 from src.predict import predict_price
 
@@ -137,9 +130,8 @@ payload_json = {
     "potential_grade": 4,
     "additional_grade": 4,
     "payload_json": {
-        "detail_json": "...",  # JSON 문자열 또는 딕셔너리
+        "detail_json": "...",
         "summary_json": "...",
-        # ... 기타 필드
     }
 }
 
@@ -149,74 +141,67 @@ print(f"예측 가격: {result['predicted_price_formatted']} 메소")
 
 ## 데이터 구조
 
-### 입력 데이터 (auction_history 테이블)
+### 입력 데이터 (raw_data.jsonl)
 
-주요 컬럼:
+주요 필드:
 - `trade_sn`: 거래 일련번호
 - `name`: 아이템 이름
 - `item_id`: 아이템 ID
 - `price`: 가격 (타겟 변수)
 - `star_force`: 스타포스
-- `potential_grade`: 잠재능력 등급
-- `additional_grade`: 추가옵션 등급
-- `payload_json`: 중첩된 JSON 데이터 (스탯, 옵션 등)
-- `created_at`: 생성 시간
-- `trade_date`: 거래 날짜
+- `potential_grade`: 잠재능력 등급 (0-4)
+- `additional_grade`: 추가옵션 등급 (0-4)
+- `payload_json`: 중첩된 JSON (detail_json, summary_json 포함)
+- `created_at`: 거래 시간
 
-### 전처리 후 특징
+### 추출되는 특징 (134개)
 
-전처리 과정에서 다음 특징들이 생성됩니다:
+1. **기본 특징**: `item_id`, `name`, `category`, `star_force`, `potential_grade`
+2. **스탯 특징**: `detail_PAD_sum`, `detail_MAD_max`, `total_stat_sum` 등
+3. **잠재능력 파싱**: `pot_str_percent`, `pot_boss_dmg`, `pot_ied` 등
+4. **아이템 메타데이터**: `level_requirement`, `job_type`, `star_force_max`
+5. **시간 특징**: `year`, `month`, `day_of_week`, `hour`, `day_of_year`
+6. **복합 특징**: `enhancement_score`, `value_score`, `potential_value_score`
 
-1. **기본 특징**: `item_id`, `name`, `star_force`, `potential_grade`, `additional_grade`, `count`
-2. **JSON에서 추출된 특징**:
-   - 기본 스탯: `base_STR`, `base_DEX`, `base_INT`, `base_LUK`
-   - 스크롤 스탯: `scroll_STR_sum`, `scroll_STR_max`, 등
-   - 능력치: `MHP_sum`, `MAD_sum`, `PAD_sum`, 등
-   - 잠재능력/추가옵션 특징: `potential_options_count`, `additional_has_skill_cooldown`, 등
-3. **시간 특징**: `year`, `month`, `day_of_week`, `hour`, 등
+## 모델 정보
 
-## 모델
+### 현재 최적 모델: LightGBM + Log Transform
 
-현재 지원하는 모델:
-- **Random Forest Regressor**: 기본 모델
-- **Gradient Boosting Regressor**: 대안 모델
+- **알고리즘**: LightGBM (Gradient Boosting)
+- **타겟 변환**: log1p (가격의 로그 변환)
+- **특징 수**: 134개
+- **훈련 샘플**: 1,840,936개
+- **테스트 샘플**: 525,982개
 
-모델은 `models/` 디렉토리에 저장됩니다:
-- `price_prediction_model.joblib`: 훈련된 모델
-- `scaler.joblib`: 특징 스케일러
-- `label_encoders.joblib`: 범주형 변수 인코더
-- `feature_importance.json`: 특징 중요도
-- `metrics.json`: 모델 성능 지표
+### Top 10 중요 특징
+
+1. `name` - 아이템 이름
+2. `day_of_year` - 연중 일자 (시장 트렌드)
+3. `item_id` - 아이템 ID
+4. `value_score` - 복합 가치 점수
+5. `job_type` - 직업군
+6. `detail_percent_StatR_sum` - 스탯 % 합계
+7. `day` - 일자
+8. `detail_cuttable` - 가위 사용 가능 횟수
+9. `level_requirement` - 착용 레벨
+10. `max_stat` - 최대 스탯 수치
 
 ## 평가 지표
 
-모델은 다음 지표로 평가됩니다:
-- **RMSE** (Root Mean Squared Error)
-- **MAE** (Mean Absolute Error)
-- **R²** (R-squared)
-- **MAPE** (Mean Absolute Percentage Error)
+| 지표 | 설명 |
+|------|------|
+| **R²** | 결정계수 (0.7885 = 79% 분산 설명) |
+| **RMSE** | 평균 제곱근 오차 |
+| **MAE** | 평균 절대 오차 (427M Meso) |
+| **MAPE** | 평균 절대 백분율 오차 (354%) |
+| **Log R²** | 로그 스케일 R² (0.969) |
 
-## 개발 가이드
+## 문서
 
-### 코드 스타일
-
-- Python 3.11+ 사용
-- 타입 힌트 사용
-- 함수 및 클래스에 docstring 작성
-
-### 테스트
-
-```bash
-# 작은 샘플로 테스트
-uv run python main.py --limit 1000
-```
+- [FINAL_REPORT.md](FINAL_REPORT.md) - 최종 보고서 (문제 정의, 방법론, 결과 분석)
+- [docs/PROGRESS_REPORT.md](docs/PROGRESS_REPORT.md) - 프로젝트 진행 보고서
+- [docs/MODEL_COMPARISON.md](docs/MODEL_COMPARISON.md) - 모델 비교 분석
 
 ## 라이선스
 
 이 프로젝트는 개인 프로젝트입니다.
-
-## 참고사항
-
-- 대용량 데이터셋의 경우 메모리 사용량을 고려하여 배치 처리나 샘플링을 사용하세요
-- 데이터베이스 쿼리는 인덱스를 활용하여 최적화할 수 있습니다
-- 모델 성능 향상을 위해 하이퍼파라미터 튜닝을 고려하세요

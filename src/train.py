@@ -33,7 +33,8 @@ def prepare_features(df: pd.DataFrame, target_col: str = 'price') -> Tuple[pd.Da
     # Remove non-feature columns
     columns_to_drop = [
         'trade_sn', 'payload_json', 'created_at', 'trade_date', 
-        'register_date', 'end_date', 'price_per_unit'  # price_per_unit is too similar to target
+        'register_date', 'end_date', 'price_per_unit',  # price_per_unit is too similar to target
+        'payload_trade_sn', 'payload_item_id'  # IDs should not be used as features
     ]
     for col in columns_to_drop:
         if col in X.columns:
@@ -193,25 +194,65 @@ def train_model(X_train: pd.DataFrame,
 def evaluate_model(model: object, 
                    X: pd.DataFrame, 
                    y: pd.Series,
-                   set_name: str = 'test') -> Dict[str, float]:
-    """Evaluate model performance"""
+                   set_name: str = 'test',
+                   use_log_transform: bool = False) -> Dict[str, float]:
+    """
+    Evaluate model performance.
+    
+    Args:
+        model: Trained model
+        X: Features
+        y: Target (in original scale or log scale depending on use_log_transform)
+        set_name: Name of the dataset (train, val, test)
+        use_log_transform: If True, y is in log scale and predictions need inverse transform
+    """
     y_pred = model.predict(X)
     
-    mse = mean_squared_error(y, y_pred)
-    rmse = np.sqrt(mse)
-    mae = mean_absolute_error(y, y_pred)
-    r2 = r2_score(y, y_pred)
-    
-    # Calculate percentage errors
-    mape = np.mean(np.abs((y - y_pred) / (y + 1))) * 100  # Add 1 to avoid division by zero
-    
-    metrics = {
-        f'{set_name}_mse': float(mse),
-        f'{set_name}_rmse': float(rmse),
-        f'{set_name}_mae': float(mae),
-        f'{set_name}_r2': float(r2),
-        f'{set_name}_mape': float(mape)
-    }
+    # If log transform was used, we need to inverse transform for proper metrics
+    if use_log_transform:
+        # Inverse transform: expm1(log1p(x)) = x
+        y_original = np.expm1(y)  # Convert log scale back to original
+        y_pred_original = np.expm1(y_pred)  # Convert predictions back to original
+        
+        # Clip negative predictions (can happen due to model extrapolation)
+        y_pred_original = np.clip(y_pred_original, 0, None)
+        
+        # Calculate metrics on original scale
+        mse = mean_squared_error(y_original, y_pred_original)
+        rmse = np.sqrt(mse)
+        mae = mean_absolute_error(y_original, y_pred_original)
+        r2 = r2_score(y_original, y_pred_original)
+        
+        # MAPE on original scale (much more meaningful now)
+        mape = np.mean(np.abs((y_original - y_pred_original) / (y_original + 1))) * 100
+        
+        # Also calculate log-scale R² for comparison
+        log_r2 = r2_score(y, y_pred)
+        
+        metrics = {
+            f'{set_name}_mse': float(mse),
+            f'{set_name}_rmse': float(rmse),
+            f'{set_name}_mae': float(mae),
+            f'{set_name}_r2': float(r2),
+            f'{set_name}_mape': float(mape),
+            f'{set_name}_log_r2': float(log_r2)
+        }
+    else:
+        mse = mean_squared_error(y, y_pred)
+        rmse = np.sqrt(mse)
+        mae = mean_absolute_error(y, y_pred)
+        r2 = r2_score(y, y_pred)
+        
+        # Calculate percentage errors
+        mape = np.mean(np.abs((y - y_pred) / (y + 1))) * 100
+        
+        metrics = {
+            f'{set_name}_mse': float(mse),
+            f'{set_name}_rmse': float(rmse),
+            f'{set_name}_mae': float(mae),
+            f'{set_name}_r2': float(r2),
+            f'{set_name}_mape': float(mape)
+        }
     
     return metrics
 
@@ -276,11 +317,28 @@ def train_price_prediction_model(df: pd.DataFrame,
                                 save_dir: str = 'models',
                                 use_time_split: bool = False,
                                 hyperparameters: Dict = None,
-                                objective: str = 'rmse') -> Dict:
-    """Complete training pipeline"""
+                                objective: str = 'rmse',
+                                use_log_transform: bool = False) -> Dict:
+    """
+    Complete training pipeline.
+    
+    Args:
+        df: Input dataframe
+        target_col: Target column name
+        model_type: Model type ('random_forest', 'lightgbm', etc.)
+        test_size: Test set size ratio
+        val_size: Validation set size ratio
+        save_dir: Directory to save models
+        use_time_split: Whether to use time-based split
+        hyperparameters: Model hyperparameters
+        objective: Loss objective ('rmse', 'mae')
+        use_log_transform: If True, apply log1p transform to target variable
+    """
     
     print("=" * 80)
     print("TRAINING PRICE PREDICTION MODEL")
+    if use_log_transform:
+        print("(Using LOG TRANSFORM on target variable)")
     print("=" * 80)
     
     # Prepare features
@@ -288,6 +346,13 @@ def train_price_prediction_model(df: pd.DataFrame,
     X, y = prepare_features(df, target_col)
     print(f"   Features shape: {X.shape}")
     print(f"   Target shape: {y.shape}")
+    
+    # Apply log transformation if requested
+    if use_log_transform:
+        print("\n   Applying log1p transform to target variable...")
+        print(f"   Original price range: {y.min():,.0f} ~ {y.max():,.0f}")
+        y = np.log1p(y)  # log(1 + x) to handle zeros
+        print(f"   Log-transformed range: {y.min():.2f} ~ {y.max():.2f}")
     
     # Split data using random sampling
     # This ensures time patterns are learned across all time periods
@@ -357,31 +422,39 @@ def train_price_prediction_model(df: pd.DataFrame,
     
     # Evaluate
     print("\n6. Evaluating model...")
-    train_metrics = evaluate_model(model, X_train_scaled, y_train, 'train')
-    val_metrics = evaluate_model(model, X_val_scaled, y_val, 'val')
-    test_metrics = evaluate_model(model, X_test_scaled, y_test, 'test')
+    train_metrics = evaluate_model(model, X_train_scaled, y_train, 'train', use_log_transform)
+    val_metrics = evaluate_model(model, X_val_scaled, y_val, 'val', use_log_transform)
+    test_metrics = evaluate_model(model, X_test_scaled, y_test, 'test', use_log_transform)
     
     # Print metrics
     print("\n" + "=" * 80)
     print("MODEL PERFORMANCE METRICS")
+    if use_log_transform:
+        print("(Metrics computed on ORIGINAL scale after inverse transform)")
     print("=" * 80)
     print(f"\nTrain Set:")
     print(f"  RMSE: {train_metrics['train_rmse']:,.2f}")
     print(f"  MAE: {train_metrics['train_mae']:,.2f}")
     print(f"  R²: {train_metrics['train_r2']:.4f}")
     print(f"  MAPE: {train_metrics['train_mape']:.2f}%")
+    if use_log_transform and 'train_log_r2' in train_metrics:
+        print(f"  Log-scale R²: {train_metrics['train_log_r2']:.4f}")
     
     print(f"\nValidation Set:")
     print(f"  RMSE: {val_metrics['val_rmse']:,.2f}")
     print(f"  MAE: {val_metrics['val_mae']:,.2f}")
     print(f"  R²: {val_metrics['val_r2']:.4f}")
     print(f"  MAPE: {val_metrics['val_mape']:.2f}%")
+    if use_log_transform and 'val_log_r2' in val_metrics:
+        print(f"  Log-scale R²: {val_metrics['val_log_r2']:.4f}")
     
     print(f"\nTest Set:")
     print(f"  RMSE: {test_metrics['test_rmse']:,.2f}")
     print(f"  MAE: {test_metrics['test_mae']:,.2f}")
     print(f"  R²: {test_metrics['test_r2']:.4f}")
     print(f"  MAPE: {test_metrics['test_mape']:.2f}%")
+    if use_log_transform and 'test_log_r2' in test_metrics:
+        print(f"  Log-scale R²: {test_metrics['test_log_r2']:.4f}")
     
     # Save model and artifacts
     print("\n7. Saving model and artifacts...")
@@ -412,6 +485,7 @@ def train_price_prediction_model(df: pd.DataFrame,
     
     all_metrics = {**train_metrics, **val_metrics, **test_metrics}
     all_metrics['model_type'] = model_type  # Add model type to metrics
+    all_metrics['use_log_transform'] = use_log_transform  # Track if log transform was used
     with open(metrics_path, 'w') as f:
         json.dump(all_metrics, f, indent=2)
     
@@ -435,7 +509,8 @@ def train_price_prediction_model(df: pd.DataFrame,
         'scaler': scaler,
         'label_encoders': label_encoders,
         'feature_importance': feature_importance,
-        'metrics': all_metrics
+        'metrics': all_metrics,
+        'use_log_transform': use_log_transform
     }
 
 

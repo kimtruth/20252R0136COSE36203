@@ -1,0 +1,146 @@
+================================================================================
+IMPROVED MODEL TRAINING PIPELINE
+Started at: 2025-12-16 15:58:12
+================================================================================
+
+================================================================================
+STEP 1: LOADING AND PREPROCESSING DATA
+================================================================================
+
+Loading data from: data/raw/raw_data.jsonl
+Loading data from JSONL file: data/raw/raw_data.jsonl
+Loaded 2629909 rows from JSONL file
+Loaded 2,629,909 rows
+
+Preprocessing with enhanced feature extraction...
+Flattening payload_json...
+Extracting time features...
+Adding engineered features...
+Handling categorical variables...
+Filling missing values...
+Preprocessed data shape: (2629909, 144)
+Number of features: 144
+Saved preprocessed data to: data/processed/preprocessed_improved.parquet
+
+Feature columns (144):
+  int64: 116 columns
+  float64: 11 columns
+  int32: 9 columns
+  object: 5 columns
+  datetime64[ns]: 3 columns
+
+================================================================================
+STEP 2: PREPARING FEATURES AND TARGET
+================================================================================
+Features shape: (2629909, 134)
+Target shape: (2629909,)
+
+Target (price) statistics:
+  Min: 50
+  Max: 1,999,999,999,999
+  Mean: 2,090,675,937
+  Median: 7,500,000
+  Std: 8,924,993,491
+
+Applying log1p transform to target...
+Log-transformed target statistics:
+  Min: 3.93
+  Max: 28.32
+  Mean: 16.83
+  Median: 15.83
+
+================================================================================
+STEP 3: SPLITTING DATA
+================================================================================
+Train: 1,840,936 samples (70.0%)
+Validation: 262,991 samples (10.0%)
+Test: 525,982 samples (20.0%)
+
+================================================================================
+STEP 4: ENCODING AND SCALING FEATURES
+================================================================================
+Encoding categorical features...
+Scaling numerical features...
+Final feature count: 134
+
+================================================================================
+STEP 5: TRAINING LIGHTGBM MODEL
+================================================================================
+Loading tuned hyperparameters from: models/hyperparameter_tuning_results.json
+Hyperparameters: {'reg_lambda': 1.0, 'reg_alpha': 0.1, 'num_leaves': 31, 'n_estimators': 300, 'min_child_samples': 10, 'max_depth': 7, 'learning_rate': 0.1, 'feature_fraction': 0.9, 'bagging_freq': 7, 'bagging_fraction': 0.8}
+
+Training LightGBM model...
+Best iteration: 300
+
+================================================================================
+STEP 6: EVALUATING MODEL
+================================================================================
+
+------------------------------------------------------------
+PERFORMANCE METRICS (on original price scale)
+------------------------------------------------------------
+
+Train Set:
+  R²: 0.7784
+  RMSE: 4,182,765,869
+  MAE: 420,971,957
+  MAPE: 1206.13%
+  Log-scale R²: 0.9689
+
+Validation Set:
+  R²: 0.7615
+  RMSE: 4,476,675,260
+  MAE: 425,300,428
+  MAPE: 325.33%
+  Log-scale R²: 0.9684
+
+Test Set:
+  R²: 0.7885
+  RMSE: 4,113,072,777
+  MAE: 427,448,111
+  MAPE: 353.74%
+  Log-scale R²: 0.9691
+
+================================================================================
+STEP 7: SAVING MODEL AND ARTIFACTS
+================================================================================
+Model saved to: models/improved_model.joblib
+Scaler saved to: models/scaler_improved.joblib
+Label encoders saved to: models/label_encoders_improved.joblib
+Feature importance saved to: models/feature_importance_improved.json
+Metrics saved to: models/metrics_improved.json
+
+================================================================================
+TOP 15 MOST IMPORTANT FEATURES
+================================================================================
+ 1. name                                          759.0000
+ 2. day_of_year                                   501.0000
+ 3. item_id                                       441.0000
+ 4. value_score                                   435.0000
+ 5. job_type                                      403.0000
+ 6. detail_percent_StatR_sum                      300.0000
+ 7. day                                           288.0000
+ 8. detail_cuttable                               262.0000
+ 9. level_requirement                             260.0000
+10. max_stat                                      218.0000
+11. enhancement_score                             193.0000
+12. pot_total_percent_value                       184.0000
+13. total_percent_stat                            176.0000
+14. detail_PDD_max                                166.0000
+15. potential_grade                               158.0000
+
+================================================================================
+COMPARISON WITH BASELINE
+================================================================================
+
+                    Baseline (Ensemble)    Improved Model    Change
+----------------------------------------------------------------------
+Test R²:            0.8034               0.7885           -0.0149
+Test RMSE:          3,904,012,871         4,113,072,777      -5.4%
+Test MAE:           591,732,818         427,448,111      +27.8%
+Test MAPE:          31,286.0%            353.7%         -30932.2%
+
+================================================================================
+TRAINING COMPLETE!
+Finished at: 2025-12-16 16:19:10
+================================================================================
